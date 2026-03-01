@@ -2,7 +2,6 @@
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import mysql.connector
 import pandas as pd
 import torch
 import numpy as np
@@ -14,6 +13,7 @@ import logging
 import threading
 import time
 from datetime import datetime, timedelta  # Added timedelta
+from db_adapter import get_connection, check_db_reachable, execute_info_schema_query, USE_SQLITE
 
 app = Flask(__name__)
 CORS(app)  # Allow cross-origin requests
@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 # --- Constants and Configuration ---
 # Database connection details (recommend using environment variables or config files)
 DB_CONFIGS = {
+    "standalone": {
+        "main": {"database": "fake_kaopuvip"},      # SQLite mode — no host/password needed
+        "history": {"database": "fake_kaopuvip"}
+    },
     "production": {
         "main": {
             "host": "cobook-2.cbvyujhj4dwc.eu-west-3.rds.amazonaws.com",
@@ -216,7 +220,8 @@ def initialize_model(environment="production"):
     try:
         # --- Fetch provider data (from main database) ---
         logger.info(f"Fetching provider data from {environment} environment main database...")
-        conn_main = mysql.connector.connect(**db_config_main)
+        conn_main = get_connection(db_config_main)
+        conn_main.connect()
         cursor_main = conn_main.cursor(dictionary=True)
         cursor_main.execute("SELECT * FROM provider")
         providers_data = cursor_main.fetchall()
@@ -230,7 +235,8 @@ def initialize_model(environment="production"):
 
         # --- Fetch explicit ratings (from main database) ---
         logger.info(f"Fetching explicit ratings (providerReviews) from {environment} environment main database...")
-        conn_main = mysql.connector.connect(**db_config_main)
+        conn_main = get_connection(db_config_main)
+        conn_main.connect()
         cursor_main = conn_main.cursor(dictionary=True)
         cursor_main.execute("SELECT userID, providerID, score FROM providerReviews")  # Select only needed columns
         rating_data = cursor_main.fetchall()
@@ -450,10 +456,6 @@ def initialize_model(environment="production"):
         logger.info("--- Model initialization completed successfully ---")
         return True
 
-    # Keep specific error handling
-    except mysql.connector.Error as err:
-        logger.error(f"Database connection or query error during initialization: {err}")
-        return False
     except Exception as e:
         logger.error(f"General error during model initialization: {e}", exc_info=True)
         # Clear potentially partially-initialized global variables on failure
@@ -472,17 +474,23 @@ def initialize_model(environment="production"):
 import os
 def detect_initial_environment():
     """Detect initial environment setting"""
-    # Priority: environment variable > file flag > default
+    # Priority: environment variable > file flag > SQLite mode > default
     env_from_var = os.getenv('RECOMMENDATION_ENV', '').lower()
-    if env_from_var in ['dev', 'development']:
+    if env_from_var in ['standalone', 'sqlite', 'fake']:
+        return 'standalone'
+    elif env_from_var in ['dev', 'development']:
         return 'dev'
     elif env_from_var in ['prod', 'production']:
         return 'production'
-    
+
     # Check if dev flag file exists
     if os.path.exists('.env.dev') or os.path.exists('dev_mode'):
         return 'dev'
-    
+
+    # If USE_SQLITE is enabled, default to standalone mode
+    if USE_SQLITE:
+        return "standalone"
+
     return "production"  # Default environment
 
 current_environment = detect_initial_environment()
@@ -889,11 +897,14 @@ def get_recommendations():
                 cb_recommendations_data = _get_content_based_recs(
                     search_query, top_n)
                 # Format CBF results directly
-                cb_df = pd.DataFrame(cb_recommendations_data)
-                # Rename score for output consistency
-                cb_df = cb_df.rename(columns={'cb_score': 'hybrid_score'})
-                recommendations = cb_df[[
-                    'providerID', 'providerName', 'hybrid_score']].to_dict('records')
+                if cb_recommendations_data:
+                    cb_df = pd.DataFrame(cb_recommendations_data)
+                    # Rename score for output consistency
+                    cb_df = cb_df.rename(columns={'cb_score': 'hybrid_score'})
+                    recommendations = cb_df[[
+                        'providerID', 'providerName', 'hybrid_score']].to_dict('records')
+                else:
+                    recommendations = []
                 logger.info(f"Generated {len(recommendations)} CBF recommendations for anonymous user.")
             else:
                 # --- Anonymous + no search query => Popularity-based ---
@@ -1111,7 +1122,8 @@ def get_existing_history_tables(db_config, lookback_days):
     """Get history tables that actually exist within the query period"""
     existing_tables = []
     try:
-        conn = mysql.connector.connect(**db_config)
+        conn = get_connection(db_config)
+        conn.connect()
         cursor = conn.cursor()
         today = datetime.now()
         possible_tables = []
@@ -1123,21 +1135,11 @@ def get_existing_history_tables(db_config, lookback_days):
         if not possible_tables:
             return []
 
-        # Query information_schema to find which tables exist
-        # Use placeholders to prevent SQL injection (if table names are not predictable enough)
-        format_strings = ','.join(['%s'] * len(possible_tables))
-        query = f"""
-            SELECT TABLE_NAME
-            FROM information_schema.TABLES
-            WHERE TABLE_SCHEMA = %s AND TABLE_NAME IN ({format_strings})
-        """
-        params = [db_config['database']] + possible_tables
-        cursor.execute(query, tuple(params))
-        results = cursor.fetchall()
-        existing_tables = [row[0] for row in results]
+        results = execute_info_schema_query(cursor, db_config, possible_tables)
+        existing_tables = [row['TABLE_NAME'] if isinstance(row, dict) else row[0] for row in results]
         logger.info(f"Found history tables within past {lookback_days} days: {existing_tables}")
 
-    except mysql.connector.Error as err:
+    except Exception as err:
         logger.error(f"Error checking history tables: {err}")
     finally:
         if 'conn' in locals() and conn.is_connected():
@@ -1155,7 +1157,8 @@ def fetch_and_process_history(db_config, lookback_days, min_duration=5):
 
     all_history_df = pd.DataFrame()
     try:
-        conn = mysql.connector.connect(**db_config)
+        conn = get_connection(db_config)
+        conn.connect()
         cursor = conn.cursor(dictionary=True)  # Get dictionary format
 
         # Dynamically build UNION ALL query
@@ -1211,7 +1214,7 @@ def fetch_and_process_history(db_config, lookback_days, min_duration=5):
         logger.info(f"Calculated implicit scores for {len(implicit_ratings_df)} user-provider interactions.")
         return implicit_ratings_df
 
-    except mysql.connector.Error as err:
+    except Exception as err:
         logger.error(f"Error fetching or processing history data: {err}")
         return pd.DataFrame(columns=['userID', 'providerID', 'score'])
     finally:
