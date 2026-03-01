@@ -31,32 +31,12 @@ DB_CONFIGS = {
         "history": {"database": "fake_kaopuvip"}
     },
     "production": {
-        "main": {
-            "host": "cobook-2.cbvyujhj4dwc.eu-west-3.rds.amazonaws.com",
-            "user": "root",
-            "passwd": "Kaopu38000VIP",  # WARNING: hardcoded password
-            "database": "kaopuvipv2"
-        },
-        "history": {
-            "host": "cobook-2.cbvyujhj4dwc.eu-west-3.rds.amazonaws.com",
-            "user": "root",
-            "passwd": "Kaopu38000VIP",  # WARNING: hardcoded password
-            "database": "kaopuvipv2_history_provider"
-        }
+        "main": {"database": "fake_kaopuvip"},      # SQLite mode — no host/password needed
+        "history": {"database": "fake_kaopuvip"}
     },
     "dev": {
-        "main": {
-            "host": "thearchyhelios.com",
-            "user": "root",
-            "passwd": "Kaopu38000VIP",
-            "database": "kaopuvipv2"
-        },
-        "history": {
-            "host": "thearchyhelios.com",
-            "user": "root",
-            "passwd": "Kaopu38000VIP",
-            "database": "kaopuvipv2_history_provider"
-        }
+        "main": {"database": "fake_kaopuvip"},      # SQLite mode — no host/password needed
+        "history": {"database": "fake_kaopuvip"}
     }
 }
 
