@@ -1,6 +1,6 @@
 # db_adapter.py
 # Database abstraction layer: supports both MySQL (production) and SQLite (standalone/dev).
-# When USE_SQLITE=True, the system is fully independent of KaopuVIP.
+
 
 import sqlite3
 import os

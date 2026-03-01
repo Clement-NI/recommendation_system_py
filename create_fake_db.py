@@ -1,9 +1,7 @@
 # create_fake_db.py
-# Generates a SQLite database with fake data matching the KaopuVIP schema.
 # Users are assigned preference profiles (favorite categories) so the
 # collaborative-filtering model can learn distinct per-user tastes and
 # produce differentiated recommendations.
-# Run this once to create 'fake_kaopuvip.db' that the recommendation API can use.
 
 import sqlite3
 import random
