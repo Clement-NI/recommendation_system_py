@@ -10,7 +10,7 @@ import random
 import os
 from datetime import datetime, timedelta
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "fake_kaopuvip.db")
+DB_PATH = os.path.join(os.path.dirname(__file__), "fake_database.db")
 
 # --- Configuration ---
 NUM_PROVIDERS = 50

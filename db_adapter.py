@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 # --- Toggle: set True to use local SQLite fake DB, False for MySQL ---
 USE_SQLITE = os.environ.get("USE_SQLITE", "true").lower() == "true"
 SQLITE_DB_PATH = os.environ.get("SQLITE_DB_PATH",
-                                 os.path.join(os.path.dirname(__file__), "fake_kaopuvip.db"))
+                                 os.path.join(os.path.dirname(__file__), "fake_database.db"))
 
 
 class DatabaseConnection:
