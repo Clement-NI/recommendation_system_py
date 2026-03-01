@@ -36,7 +36,7 @@ DB_CONFIGS = {
     },
     "dev": {
         "main": {"database": "fake_database"},      # SQLite mode — no host/password needed
-        "history": {"database": "database"}
+        "history": {"database": "fake_database"}
     }
 }
 
