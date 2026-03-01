@@ -67,21 +67,29 @@ MIN_VIEW_DURATION = 5  # Ignore view records shorter than 5 seconds (optional)
 
 # --- PyTorch Model Definition ---
 class MatrixFactorization(torch.nn.Module):
-    """Matrix factorization model class"""
+    """Matrix factorization model with user/item biases for better personalisation."""
 
     def __init__(self, n_users, n_items, n_factors=30):
         super().__init__()
         # Embedding layers for users and items
         self.user_factors = torch.nn.Embedding(n_users, n_factors)
         self.item_factors = torch.nn.Embedding(n_items, n_factors)
+        # Bias terms capture "this user rates high" / "this item is popular"
+        # so the factor space can focus on personal preference patterns.
+        self.user_biases = torch.nn.Embedding(n_users, 1)
+        self.item_biases = torch.nn.Embedding(n_items, 1)
+        self.global_bias = torch.nn.Parameter(torch.zeros(1))
         # Initialize weights
-        self.user_factors.weight.data.uniform_(0, 0.05)
-        self.item_factors.weight.data.uniform_(0, 0.05)
+        torch.nn.init.normal_(self.user_factors.weight, std=0.1)
+        torch.nn.init.normal_(self.item_factors.weight, std=0.1)
+        torch.nn.init.zeros_(self.user_biases.weight)
+        torch.nn.init.zeros_(self.item_biases.weight)
 
     def forward(self, data):
         # Forward pass to compute predicted scores
         users, items = data[:, 0], data[:, 1]
-        return (self.user_factors(users) * self.item_factors(items)).sum(1)
+        dot = (self.user_factors(users) * self.item_factors(items)).sum(1)
+        return dot + self.user_biases(users).squeeze() + self.item_biases(items).squeeze() + self.global_bias
 
 
 # --- PyTorch Data Loader ---
@@ -296,15 +304,15 @@ def initialize_model(environment="production"):
         logger.info(f"Model dimensions based on combined data: users={n_users}, providers={n_items}")
 
         # --- Initialize model ---
-        model = MatrixFactorization(n_users, n_items, n_factors=8)
+        model = MatrixFactorization(n_users, n_items, n_factors=32)
         model.to(device)
         logger.info(f"Model initialized and moved to {device}.")
 
         # --- Train model (using combined data) ---
         # Reduced training time: from 256 epochs to 64 epochs
-        num_epochs = 64 if environment == "production" else 32  # Further reduced for dev environment
+        num_epochs = 64 if environment == "production" else 128
         loss_fn = torch.nn.MSELoss()
-        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-5)
 
         # Pass combined dataframe to Loader
         train_set = Loader(combined_ratings_df)
