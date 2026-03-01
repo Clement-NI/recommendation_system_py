@@ -27,16 +27,16 @@ logger = logging.getLogger(__name__)
 # Database connection details (recommend using environment variables or config files)
 DB_CONFIGS = {
     "standalone": {
-        "main": {"database": "fake_kaopuvip"},      # SQLite mode — no host/password needed
-        "history": {"database": "fake_kaopuvip"}
+        "main": {"database": "fake_database"},      # SQLite mode — no host/password needed
+        "history": {"database": "fake_database"}
     },
     "production": {
-        "main": {"database": "fake_kaopuvip"},      # SQLite mode — no host/password needed
-        "history": {"database": "fake_kaopuvip"}
+        "main": {"database": "fake_database"},      # SQLite mode — no host/password needed
+        "history": {"database": "fake_database"}
     },
     "dev": {
-        "main": {"database": "fake_kaopuvip"},      # SQLite mode — no host/password needed
-        "history": {"database": "fake_kaopuvip"}
+        "main": {"database": "fake_database"},      # SQLite mode — no host/password needed
+        "history": {"database": "fake_database"}
     }
 }
 
