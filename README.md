@@ -1,6 +1,6 @@
 # Recommendation System
 
-A hybrid recommendation engine built with **PyTorch** and **Flask**. It combines collaborative filtering (matrix factorisation), content-based filtering (cosine similarity), and popularity ranking to serve personalised provider recommendations via a REST API.
+A hybrid recommendation engine built with **PyTorch** and **Flask**. It combines **Neural Collaborative Filtering** (NCF — fusion of matrix factorisation and a multi-layer perceptron), content-based filtering (cosine similarity), and popularity ranking to serve personalised provider recommendations via a REST API.
 
 ## Table of Contents
 
@@ -26,8 +26,8 @@ A hybrid recommendation engine built with **PyTorch** and **Flask**. It combines
                 ┌────────▼────────┐          ┌───────────▼──────┐    ┌───────────▼──────┐
                 │  Collaborative  │          │  Content-Based   │    │   Popularity     │
                 │  Filtering (CF) │          │  Filtering (CB)  │    │   Ranking        │
-                │  PyTorch MF     │          │  Cosine Sim +    │    │   Avg scores     │
-                │  with biases    │          │  Fuzzy Matching  │    │   (anonymous)    │
+                │  PyTorch NCF    │          │  Cosine Sim +    │    │   Avg scores     │
+                │  GMF + MLP path │          │  Fuzzy Matching  │    │   (anonymous)    │
                 └────────┬────────┘          └───────────┬──────┘    └───────────┬──────┘
                          │                               │                       │
                          └───────────────┬───────────────┘                       │
@@ -44,12 +44,12 @@ A hybrid recommendation engine built with **PyTorch** and **Flask**. It combines
 
 ```
 recommendation_system_py/
-├── recommendation_api.py    # Main Flask application & ML models
+├── recommendation_api.py    # Main Flask application & ML models (NCF + CBF + popularity)
 ├── db_adapter.py            # Database abstraction (MySQL / SQLite)
 ├── create_fake_db.py        # Generates SQLite DB with realistic fake data
-├── test_differentiation.py  # Verifies per-user recommendation diversity
+├── test.py                  # Quick API client for one-off recommendations
 ├── requirements.txt         # Python dependencies
-├── fake_kaopuvip.db         # Generated SQLite database (standalone mode)
+├── fake_database.db         # Generated SQLite database (standalone mode)
 ├── .gitignore
 └── README.md
 ```
@@ -58,10 +58,10 @@ recommendation_system_py/
 
 | File | Purpose |
 |---|---|
-| `recommendation_api.py` | Flask server with all API endpoints, the `MatrixFactorization` PyTorch model, data loading, training loop, content-based filtering, popularity calculation, and a background re-training thread. |
+| `recommendation_api.py` | Flask server with all API endpoints, the `NeuralCollaborativeFiltering` PyTorch model, data loading, training loop, content-based filtering, popularity calculation, and a background re-training thread. |
 | `db_adapter.py` | Abstraction layer that lets the same SQL queries work against both MySQL (production) and SQLite (standalone). Translates query syntax and wraps cursors to return consistent dict-style rows. |
-| `create_fake_db.py` | Creates `fake_kaopuvip.db` with 50 providers across 10 categories, 200 users with preference profiles (2-4 liked categories each), ~3,500 reviews, and 7 days of browsing history. |
-| `test_differentiation.py` | End-to-end test that starts the server, queries 5 different users, and asserts they each receive different top-5 recommendations. |
+| `create_fake_db.py` | Creates `fake_database.db` with 50 providers across 10 categories, 200 users with preference profiles (2-4 liked categories each), ~3,500 reviews, and 7 days of browsing history. |
+| `test.py` | Quick client script that POSTs to `/api/recommendations` and prints the top results for a sample user. |
 
 ## How It Works
 
@@ -75,24 +75,53 @@ recommendation_system_py/
 
 | User State | Has Search Query | Strategy |
 |---|---|---|
-| Logged-in | No | **Collaborative Filtering** - personalised scores from the trained MF model |
+| Logged-in | No | **Collaborative Filtering** - personalised scores from the trained NCF model |
 | Logged-in | Yes | **Hybrid** - weighted merge of CF + content-based scores (`alpha` controls the blend) |
 | Anonymous | Yes | **Content-Based** - fuzzy-match the query to a provider name, then rank by cosine similarity on genre/category features |
 | Anonymous | No | **Popularity-Based** - top providers by average rating (cached at startup) |
 
 ### Model Architecture
 
-The core model is **Matrix Factorisation with biases**:
+The core model is **Neural Collaborative Filtering (NCF)** — He et al., 2017. It fuses two paths to capture both linear and non-linear user-item interactions:
 
 ```
-predicted_score = dot(user_embedding, item_embedding)
-                + user_bias + item_bias + global_bias
+                    user_id ─┐                ┌─ item_id
+                             │                │
+            ┌────────────────┴────────────────┴────────────────┐
+            │                                                  │
+       ┌────▼─────┐  GMF embeddings           MLP embeddings ┌─▼────┐
+       │ user_emb │  (n_factors=32)           (n_factors=32) │ item │
+       └────┬─────┘                                          └──┬───┘
+            │                                                   │
+            └────────►  ⊙ (element-wise)  ◄─── linear path ◄────┤
+                              │                                  │
+                              │      ┌─── concat(u_mlp, i_mlp) ──┘
+                              │      │
+                              │      ▼
+                              │   Linear(64→32) + ReLU
+                              │   Linear(32→16) + ReLU
+                              │   Linear(16→8)  + ReLU
+                              │      │
+                              └─────►│  concat
+                                     ▼
+                              Linear(40 → 1)  ← fusion
+                                     │
+                              + user_bias + item_bias + global_bias
+                                     │
+                                     ▼
+                                  score
 ```
 
-- **32 latent factors** per user/item
-- User & item **bias terms** separate popularity effects from personal preference patterns
+**GMF path** (linear): element-wise product of user and item embeddings — the same trick as classical matrix factorisation.
+
+**MLP path** (non-linear): concatenated embeddings passed through `Linear → ReLU` blocks (`64 → 32 → 16 → 8`). This lets the model learn complex interaction patterns that a pure dot product cannot.
+
+**Fusion layer**: a final `Linear(40 → 1)` layer combines both paths into a scalar score. Adding bias terms speeds convergence by separating popularity effects from personal preference.
+
+- **32 latent factors** per user/item, **two separate embedding tables** (one for GMF, one for MLP) as recommended in the paper
+- MLP layers initialised with **Kaiming uniform** (well-suited for ReLU); fusion layer with **Xavier uniform**
 - Trained with **Adam** (lr=1e-3, weight_decay=1e-5) and **MSE loss**
-- Weights initialised with `normal(std=0.1)`; biases initialised to zero
+- The class is exposed as both `NeuralCollaborativeFiltering` and the legacy alias `MatrixFactorization` for backward compatibility
 
 ## Getting Started
 
@@ -188,7 +217,7 @@ Force switch to the dev environment and retrain the model.
 
 | Environment | Database | Training Epochs | Re-init Interval |
 |---|---|---|---|
-| `standalone` | SQLite (`fake_kaopuvip.db`) | 128 | 10 min |
+| `standalone` | SQLite (`fake_database.db`) | 128 | 10 min |
 | `dev` | MySQL (thearchyhelios.com) | 128 | 10 min |
 | `production` | MySQL (AWS RDS) | 64 | 30 min |
 
@@ -200,23 +229,24 @@ Environment is detected automatically in this priority order:
 
 ## Testing
 
-Run the end-to-end differentiation test:
+With the server running (`python recommendation_api.py`), run the quick client:
 
 ```bash
-RECOMMENDATION_ENV=standalone python test_differentiation.py
+python test.py
 ```
 
-This starts the server, waits for the model to train, queries 5 users, and checks that each receives a unique set of recommendations.
+It POSTs to `/api/recommendations` for a sample user and prints the top-5 results. To verify per-user differentiation manually, change the `user_id` in `test.py` and re-run for several users — each should receive a different ranked list.
 
-Example output:
+Example output (NCF model, 5 different users):
 
 ```
-user_1   -> ['Star Wellness', 'Star Lab', 'Pure Place', ...]
-user_10  -> ['Pacific Wellness', 'Mountain Lounge', 'Summit Center', ...]
-user_50  -> ['Crystal Retreat', 'Diamond Center', 'Star Zone', ...]
+user_1    -> ['Star Wellness', 'Star Lab', 'Pure Place', ...]
+user_10   -> ['Diamond Place', 'Crystal Place', 'Crystal Wellness', ...]
+user_50   -> ['River Studio', 'Sunrise Lab', 'Summit Hub', ...]
+user_100  -> ['Lotus Clinic', 'Harmony Lounge', 'Diamond Hub', ...]
+user_150  -> ['Lotus Clinic', 'Forest Zone', 'Star Place', ...]
 
-Unique recommendation lists: 5 / 5
-PASS: Users received DIFFERENT recommendations.
+Unique recommendation lists: 5 / 5  ✓
 ```
 
 ## Configuration
@@ -227,7 +257,7 @@ PASS: Users received DIFFERENT recommendations.
 |---|---|---|
 | `RECOMMENDATION_ENV` | *(auto-detect)* | Set to `standalone`, `dev`, or `production` |
 | `USE_SQLITE` | `"true"` | `"true"` for SQLite, `"false"` for MySQL |
-| `SQLITE_DB_PATH` | `./fake_kaopuvip.db` | Path to the SQLite database file |
+| `SQLITE_DB_PATH` | `./fake_database.db` | Path to the SQLite database file |
 
 ### Key Constants (in `recommendation_api.py`)
 

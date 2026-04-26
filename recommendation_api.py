@@ -46,30 +46,85 @@ MIN_VIEW_DURATION = 5  # Ignore view records shorter than 5 seconds (optional)
 
 
 # --- PyTorch Model Definition ---
-class MatrixFactorization(torch.nn.Module):
-    """Matrix factorization model with user/item biases for better personalisation."""
+class NeuralCollaborativeFiltering(torch.nn.Module):
+    """Neural Collaborative Filtering (NCF) — He et al., 2017.
 
-    def __init__(self, n_users, n_items, n_factors=30):
+    Combines two paths to capture both linear and non-linear user-item
+    interactions:
+      1. GMF (Generalized Matrix Factorization): element-wise product of
+         user/item embeddings (linear).
+      2. MLP: concatenated embeddings passed through Linear + ReLU layers
+         (non-linear).
+
+    Both paths are fused via a final linear layer.  Bias terms are kept
+    so the embedding space can focus on personal preference patterns.
+    """
+
+    def __init__(self, n_users, n_items, n_factors=32, mlp_layers=(64, 32, 16, 8)):
         super().__init__()
-        # Embedding layers for users and items
+        # --- GMF embeddings (linear path) ---
         self.user_factors = torch.nn.Embedding(n_users, n_factors)
         self.item_factors = torch.nn.Embedding(n_items, n_factors)
-        # Bias terms capture "this user rates high" / "this item is popular"
-        # so the factor space can focus on personal preference patterns.
+
+        # --- MLP embeddings (separate from GMF, as recommended in the paper) ---
+        self.user_mlp_emb = torch.nn.Embedding(n_users, n_factors)
+        self.item_mlp_emb = torch.nn.Embedding(n_items, n_factors)
+
+        # --- Bias terms ---
         self.user_biases = torch.nn.Embedding(n_users, 1)
         self.item_biases = torch.nn.Embedding(n_items, 1)
         self.global_bias = torch.nn.Parameter(torch.zeros(1))
-        # Initialize weights
+
+        # --- MLP tower: Linear + ReLU stacks ---
+        layers = []
+        input_dim = 2 * n_factors  # concat of user + item MLP embeddings
+        for hidden_dim in mlp_layers:
+            layers.append(torch.nn.Linear(input_dim, hidden_dim))
+            layers.append(torch.nn.ReLU())
+            input_dim = hidden_dim
+        self.mlp = torch.nn.Sequential(*layers)
+
+        # --- Final fusion layer (GMF features + MLP output -> single score) ---
+        self.fusion = torch.nn.Linear(n_factors + mlp_layers[-1], 1)
+
+        # --- Weight initialisation ---
         torch.nn.init.normal_(self.user_factors.weight, std=0.1)
         torch.nn.init.normal_(self.item_factors.weight, std=0.1)
+        torch.nn.init.normal_(self.user_mlp_emb.weight, std=0.1)
+        torch.nn.init.normal_(self.item_mlp_emb.weight, std=0.1)
         torch.nn.init.zeros_(self.user_biases.weight)
         torch.nn.init.zeros_(self.item_biases.weight)
+        for layer in self.mlp:
+            if isinstance(layer, torch.nn.Linear):
+                torch.nn.init.kaiming_uniform_(layer.weight, nonlinearity='relu')
+                torch.nn.init.zeros_(layer.bias)
+        torch.nn.init.xavier_uniform_(self.fusion.weight)
+        torch.nn.init.zeros_(self.fusion.bias)
 
     def forward(self, data):
-        # Forward pass to compute predicted scores
         users, items = data[:, 0], data[:, 1]
-        dot = (self.user_factors(users) * self.item_factors(items)).sum(1)
-        return dot + self.user_biases(users).squeeze() + self.item_biases(items).squeeze() + self.global_bias
+
+        # GMF path: element-wise product (captures linear interactions)
+        gmf_vec = self.user_factors(users) * self.item_factors(items)
+
+        # MLP path: concat + non-linear transformations
+        mlp_input = torch.cat([self.user_mlp_emb(users), self.item_mlp_emb(items)], dim=-1)
+        mlp_vec = self.mlp(mlp_input)
+
+        # Fuse both paths
+        fused = torch.cat([gmf_vec, mlp_vec], dim=-1)
+        score = self.fusion(fused).squeeze(-1)
+
+        # Add biases (helps model converge faster)
+        score = score + self.user_biases(users).squeeze(-1) \
+                      + self.item_biases(items).squeeze(-1) \
+                      + self.global_bias
+        return score
+
+
+# Backward-compatibility alias so the rest of the code (and any external
+# callers) keep working without changes.
+MatrixFactorization = NeuralCollaborativeFiltering
 
 
 # --- PyTorch Data Loader ---
