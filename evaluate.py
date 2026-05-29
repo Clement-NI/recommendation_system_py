@@ -25,7 +25,7 @@ from sklearn.model_selection import train_test_split
 # ---------------------------------------------------------------------------
 
 class NeuralCollaborativeFiltering(torch.nn.Module):
-    def __init__(self, n_users, n_items, n_factors=32, mlp_layers=(64, 32, 16, 8)):
+    def __init__(self, n_users, n_items, n_factors=32, mlp_layers=(64, 32, 16, 8), dropout=0.3):
         super().__init__()
         self.user_factors = torch.nn.Embedding(n_users, n_factors)
         self.item_factors = torch.nn.Embedding(n_items, n_factors)
@@ -40,6 +40,7 @@ class NeuralCollaborativeFiltering(torch.nn.Module):
         for hidden_dim in mlp_layers:
             layers.append(torch.nn.Linear(input_dim, hidden_dim))
             layers.append(torch.nn.ReLU())
+            layers.append(torch.nn.Dropout(dropout))
             input_dim = hidden_dim
         self.mlp = torch.nn.Sequential(*layers)
         self.fusion = torch.nn.Linear(n_factors + mlp_layers[-1], 1)
@@ -99,11 +100,12 @@ DB_PATH = os.environ.get("SQLITE_DB_PATH", "./fake_database.db")
 TEST_RATIO = 0.2
 LIKE_THRESHOLD = 4.0
 TOP_K = 5
-N_FACTORS = 32
-NUM_EPOCHS = 128
+N_FACTORS = 16
+NUM_EPOCHS = 64
 BATCH_SIZE = 128
 LR = 1e-3
-WEIGHT_DECAY = 1e-5
+WEIGHT_DECAY = 1e-3
+MLP_LAYERS = (32, 16, 8)
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +140,7 @@ def train_model(train_df):
     n_users = len(train_set.userid2idx)
     n_items = len(train_set.providerid2idx)
 
-    model = NeuralCollaborativeFiltering(n_users, n_items, n_factors=N_FACTORS)
+    model = NeuralCollaborativeFiltering(n_users, n_items, n_factors=N_FACTORS, mlp_layers=MLP_LAYERS)
     loss_fn = torch.nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
     train_loader = DataLoader(train_set, BATCH_SIZE, shuffle=True)
