@@ -13,8 +13,8 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "fake_database.db")
 # --- Configuration ---
 NUM_PROVIDERS = 200
 NUM_USERS = 500
-MIN_REVIEWS_PER_USER = 25
-MAX_REVIEWS_PER_USER = 50
+MIN_REVIEWS_PER_USER = 50
+MAX_REVIEWS_PER_USER = 100
 NUM_HISTORY_DAYS = 30
 NUM_HISTORY_RECORDS_PER_DAY = 800
 
