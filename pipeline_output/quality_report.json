@@ -1,0 +1,62 @@
+{
+  "timestamp": "2026-05-29T22:26:16.724404",
+  "dataset": {
+    "total_ratings": 41013,
+    "users": 500,
+    "items": 200,
+    "avg_ratings_per_user": 82.0,
+    "sparsity": 0.5899,
+    "score_mean": 3.441,
+    "score_std": 1.038,
+    "score_range": [
+      1.0,
+      5.0
+    ]
+  },
+  "checks": {
+    "total_ratings >= minimum": {
+      "passed": true,
+      "detail": "41013 vs 1000"
+    },
+    "users >= minimum": {
+      "passed": true,
+      "detail": "500 vs 50"
+    },
+    "items >= minimum": {
+      "passed": true,
+      "detail": "200 vs 20"
+    },
+    "no null values": {
+      "passed": true,
+      "detail": "0 nulls"
+    },
+    "scores in valid range": {
+      "passed": true,
+      "detail": "[1.0, 5.0]"
+    }
+  },
+  "metrics": {
+    "rmse": 0.6812,
+    "mae": 0.543,
+    "nrmse": 0.1703,
+    "precision@5": 0.4625,
+    "recall@5": 0.3973,
+    "ndcg@5": 0.4891,
+    "hitrate@5": 0.8958,
+    "users_evaluated": 499,
+    "test_samples": 8203
+  },
+  "model": {
+    "n_factors": 24,
+    "mlp_layers": [
+      48,
+      24,
+      12
+    ],
+    "dropout": 0.3,
+    "epochs": 80,
+    "weight_decay": 0.0005
+  },
+  "pipeline_status": "APPROVED",
+  "model_path": "./pipeline_output/model.pt"
+}
