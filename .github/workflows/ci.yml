@@ -1,0 +1,39 @@
+name: NCF Pipeline CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. 拉代码
+      - uses: actions/checkout@v4
+
+      # 2. 装 Python
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # 3. 装依赖
+      - run: pip install -r requirements.txt
+
+      # 4. 生成测试数据库
+      - run: python create_fake_db.py
+
+      # 5. 跑数据管道（含质量门槛检查）
+      - run: python data_pipeline.py
+
+      # 6. 跑独立评估
+      - run: python evaluate.py
+
+      # 7. 保存报告为 artifact
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: quality-report
+          path: pipeline_output/quality_report.json
