@@ -11,12 +11,12 @@ from datetime import datetime, timedelta
 DB_PATH = os.path.join(os.path.dirname(__file__), "fake_database.db")
 
 # --- Configuration ---
-NUM_PROVIDERS = 50
-NUM_USERS = 200
-MIN_REVIEWS_PER_USER = 12
-MAX_REVIEWS_PER_USER = 25
-NUM_HISTORY_DAYS = 7
-NUM_HISTORY_RECORDS_PER_DAY = 300
+NUM_PROVIDERS = 200
+NUM_USERS = 500
+MIN_REVIEWS_PER_USER = 25
+MAX_REVIEWS_PER_USER = 50
+NUM_HISTORY_DAYS = 30
+NUM_HISTORY_RECORDS_PER_DAY = 800
 
 CATEGORIES = [
     "Massage", "Yoga", "Fitness", "Meditation", "Nutrition",
@@ -27,12 +27,13 @@ PROVIDER_PREFIXES = [
     "Zen", "Harmony", "Pure", "Golden", "Crystal",
     "Royal", "Elite", "Pacific", "Summit", "Lotus",
     "Sunrise", "Moonlight", "Ocean", "Mountain", "Forest",
-    "River", "Sky", "Star", "Diamond", "Silver"
+    "River", "Sky", "Star", "Diamond", "Silver",
+    "Cedar", "Maple", "Jade", "Pearl", "Coral",
 ]
 
 PROVIDER_SUFFIXES = [
     "Wellness", "Studio", "Center", "Clinic", "Hub",
-    "Place", "Retreat", "Lounge", "Lab", "Zone"
+    "Place", "Retreat", "Lounge", "Lab", "Zone",
 ]
 
 # Positive / negative comment pools keyed by score range

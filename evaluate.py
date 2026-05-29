@@ -100,12 +100,12 @@ DB_PATH = os.environ.get("SQLITE_DB_PATH", "./fake_database.db")
 TEST_RATIO = 0.2
 LIKE_THRESHOLD = 4.0
 TOP_K = 5
-N_FACTORS = 16
-NUM_EPOCHS = 64
-BATCH_SIZE = 128
+N_FACTORS = 24
+NUM_EPOCHS = 80
+BATCH_SIZE = 256
 LR = 1e-3
-WEIGHT_DECAY = 1e-3
-MLP_LAYERS = (32, 16, 8)
+WEIGHT_DECAY = 5e-4
+MLP_LAYERS = (48, 24, 12)
 
 
 # ---------------------------------------------------------------------------
