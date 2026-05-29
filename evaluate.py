@@ -187,11 +187,16 @@ def evaluate_regression(model, train_set, test_df):
     return rmse, mae, len(preds)
 
 
-def evaluate_ranking(model, train_set, test_df, top_k=TOP_K):
+def evaluate_ranking(model, train_set, test_df, train_df, top_k=TOP_K):
     """Precision@K, Recall@K, NDCG@K, Hit Rate@K."""
     test_df = test_df.copy()
     test_df["userID"] = test_df["userID"].astype(str)
     test_df["providerID"] = test_df["providerID"].astype(str)
+    train_df = train_df.copy()
+    train_df["userID"] = train_df["userID"].astype(str)
+    train_df["providerID"] = train_df["providerID"].astype(str)
+
+    train_user_items = train_df.groupby("userID")["providerID"].apply(set).to_dict()
 
     n_items = len(train_set.providerid2idx)
     all_item_indices = np.array(list(train_set.providerid2idx.values()))
@@ -209,6 +214,8 @@ def evaluate_ranking(model, train_set, test_df, top_k=TOP_K):
         if not liked:
             continue
 
+        seen = train_user_items.get(uid, set())
+
         u_idx = train_set.userid2idx[uid]
         user_tensor = torch.tensor([u_idx] * n_items, dtype=torch.long)
         item_tensor = torch.tensor(all_item_indices, dtype=torch.long)
@@ -217,7 +224,14 @@ def evaluate_ranking(model, train_set, test_df, top_k=TOP_K):
         with torch.no_grad():
             scores = model(batch).numpy()
 
-        top_internal = np.argsort(scores)[::-1][:top_k]
+        ranked = np.argsort(scores)[::-1]
+        top_internal = []
+        for idx in ranked:
+            pid = train_set.idx2providerid[idx]
+            if pid not in seen:
+                top_internal.append(idx)
+            if len(top_internal) == top_k:
+                break
         top_pids = {train_set.idx2providerid[i] for i in top_internal}
 
         n_hit = len(top_pids & liked)
@@ -303,7 +317,7 @@ def main():
     print(f"    MAE  : {mae:.4f}")
 
     # --- Ranking ---
-    ranking = evaluate_ranking(model, train_set, test_df, top_k=TOP_K)
+    ranking = evaluate_ranking(model, train_set, test_df, train_df, top_k=TOP_K)
     print(f"\n  Ranking Metrics ({ranking['users_evaluated']} users with liked items):")
     print(f"    Precision@{TOP_K} : {ranking[f'Precision@{TOP_K}']:.4f}")
     print(f"    Recall@{TOP_K}    : {ranking[f'Recall@{TOP_K}']:.4f}")
