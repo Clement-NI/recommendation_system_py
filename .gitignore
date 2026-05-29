@@ -1,2 +1,4 @@
 fake_database.db.db
 __pycache__/
+pipeline_output/model.pt
+pipeline_output/training_data.csv
